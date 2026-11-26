@@ -24,8 +24,12 @@ The server runs locally over stdio. Nothing is exposed off the machine.
 
 - Python 3.12+
 - `uv` / `uvx` (recommended), or a local virtual environment
-- For the one-time sign-in, a local Chromium installation for Playwright:
-  `uvx --from playwright playwright install chromium`
+- For the one-time sign-in, use `bin/persistent_login.py` (see
+  "First-time setup — sign in" below). It does not need a browser on
+  the machine running the connector. Installing Playwright Chromium
+  (`uvx --from playwright playwright install chromium`) is only
+  needed if you want the server itself to open a browser window, which
+  does not work on a headless machine.
 
 Install the server without installing this repo:
 
@@ -61,8 +65,9 @@ chmod +x install.sh
 `~/workspace/custom-skills/fpl/`. It is safe to re-run, and it never
 touches your FPL login, credentials, or team config. It needs Python
 3.12+, `uv`/`uvx` (it warns if they are missing), and `git` for the
-one-liner, which clones the repo for you. For `fpl_login` you also need
-Playwright Chromium: `uvx --from playwright playwright install chromium`.
+one-liner, which clones the repo for you. For the first sign-in, use
+`bin/persistent_login.py` as described below — do not rely on the
+server opening a browser window on a headless machine.
 (The `chmod +x` step is needed because GitHub's file push does not
 preserve the executable bit.)
 
@@ -73,7 +78,7 @@ Copy the files into your Muse workspace:
 ```text
 # Connector (from this repo root)
 cp CONNECTOR.md connector.yaml ~/workspace/custom-connectors/custom.fpl/
-cp bin/client.py ~/workspace/custom-connectors/custom.fpl/bin/client.py
+cp bin/client.py bin/persistent_login.py ~/workspace/custom-connectors/custom.fpl/bin/
 
 # Skill
 cp skills/fpl/SKILL.md skills/fpl/skill.yaml ~/workspace/custom-skills/fpl/
@@ -104,22 +109,115 @@ python3 ~/workspace/custom-connectors/custom.fpl/bin/client.py call-tool --name 
 
 Replace `0` with your real team ID.
 
-## Sign in once (fpl_login)
+## First-time setup — sign in
 
-Sign in only when you are present and ready. Run `fpl_login` and sign in
-yourself in the browser window it opens, on FPL's own page. The server
-never sees your password.
+Do this once, when you are present and ready. After it, the saved
+session renews itself, and you do not need to sign in again for
+normal reads and writes unless FPL logs the session out.
 
 FPL's identity provider rejects password grants, so there is no way to
 sign in by handing over an email and password. The supported flow is
 authorization-code + PKCE in a real browser. The server catches the
 redirect, exchanges the code, and saves only a refresh token in
-`~/.fpl-mcp/credentials.json`, readable only by you.
+`~/.fpl-mcp/credentials.json`, readable only by you. The server never
+sees your password: you sign in yourself, on FPL's own page, in your
+own browser.
+
+### The trap: do not do the two-call redirect flow
+
+`fpl_login` keeps its pending sign-in (the state and the PKCE secret)
+only in the memory of the server process that created it, and it
+expires after 20 minutes. The normal client, `bin/client.py`, starts
+a fresh server for every call and kills it afterwards. So this will
+**always fail**:
+
+1. Call `fpl_login` once to get a sign-in link.
+2. Sign in in your browser.
+3. Call `fpl_login` again with the redirect address you landed on.
+
+The second call is a new server with no pending sign-in, and it
+answers: "No sign-in is waiting for that address; it may have
+expired. Run `fpl_login` to start again." That is not a timeout and
+not a problem with the address — the `/en/` form of the redirect
+address is accepted. The pending sign-in simply died with the first
+server process.
+
+Do not try to fix this by installing a browser on a headless machine
+either: the server's headed browser window is invisible to you there,
+so you cannot sign in in it.
+
+### The working way: one server, kept alive
+
+Use `bin/persistent_login.py`. It starts the server **once**, asks it
+for a sign-in link without opening a browser, waits for the redirect
+address, and hands that address back to the **same** live server,
+where the pending sign-in still exists. It then checks the session.
+
+1. Start the driver in the background. It waits up to 19 minutes
+   (the pending sign-in expires after 20).
+
+```text
+cd ~/workspace/custom-connectors/custom.fpl
+nohup python3 bin/persistent_login.py > persistent-login-live.log 2>&1 &
+```
+
+2. Read the log and take the fresh `sign_in_url` it prints (step
+   STEP1). Give that link to the person signing in. Do not use a link
+   from an earlier run — every run makes a new one, and the old ones
+   are dead.
+
+3. Open the link in a real browser and sign in on FPL's own page.
+   Use a browser that can capture the address you land on: on a
+   phone the code in the address flashes by too fast to copy by hand,
+   so use a desktop or cloud browser that records the address.
+   Make no team changes in that browser — just sign in.
+
+4. Capture the full address you land on. It starts with
+   `https://fantasy.premierleague.com/` and contains `?code=` and
+   `&state=` (the `/en/` form is fine). Write it, exactly as it is,
+   into the file the driver is watching:
+
+```text
+printf '%s' '<the full address you landed on>' > ~/workspace/custom-connectors/custom.fpl/.login-redirect.txt
+```
+
+   The driver picks it up within a few seconds. It deletes the file
+   after reading it, so a stale code cannot be replayed.
+
+5. Read the log again. Success looks like this:
+
+```text
+STEP2 fpl_login redirect_url (same server process):
+{"signed_in": true, "status": "complete", "logged_in_as": "...", "entry_id": ...}
+STEP3 fpl_auth_status:
+{"authenticated": true, "logged_in_as": "...", "entry_id": ...}
+LOGIN COMPLETE
+```
+
+6. Verify with a normal one-shot read — this now works, because the
+   session is saved:
 
 ```text
 echo '{}' > /tmp/fpl-empty.json
-python3 ~/workspace/custom-connectors/custom.fpl/bin/client.py call-tool --name fpl_login --arguments-file /tmp/fpl-empty.json
+python3 ~/workspace/custom-connectors/custom.fpl/bin/client.py call-tool --name fpl_my_squad --arguments-file /tmp/fpl-empty.json
 ```
+
+   That should return your team, live and authenticated.
+
+### Troubleshooting the sign-in
+
+- "No sign-in is waiting for that address" — the server that issued
+  the link is no longer running. Start a **fresh** driver for a
+  fresh link and sign in again; the old link and code are dead.
+- The driver times out (19 minutes) or the machine restarts while it
+  is waiting — same fix: start a fresh driver, use its new link.
+- The code is used once and expires within minutes, so hand the
+  redirect address back promptly, in the same run.
+- After a successful login, the refresh token in
+  `~/.fpl-mcp/credentials.json` renews automatically. Normal
+  one-shot `client.py` calls work from then on. If `fpl_auth_status`
+  later says you are not signed in, run the persistent driver again
+  from step 1.
 
 Check the session before any write:
 
@@ -176,6 +274,10 @@ client's allowed tools.
 - `connector.yaml` — `custom.fpl` descriptor for Muse.
 - `bin/client.py` — stdio MCP client wrapper (23 of 24 server tools
   allowed; `fpl_set_token` excluded).
+- `bin/persistent_login.py` — first-time sign-in driver: keeps one
+  server alive so the pending sign-in survives from the sign-in link
+  to the redirect. See "First-time setup — sign in" above. It never
+  opens a browser and never attempts a team change.
 - `skills/fpl/SKILL.md` and `skills/fpl/skill.yaml` — the Muse skill
   for managing a team with the approval gate.
 - `LICENSE` — MIT for the wrapper files in this repo only.
@@ -188,11 +290,16 @@ client's allowed tools.
 - The upstream `fantasy-premier-league-mcp` package has no license file
   in its PyPI metadata. It is not copied here; it is depended on via
   PyPI / `uvx`.
-- The server runs locally only. It cannot work from another machine, and
-  `fpl_login` needs a browser window on the machine running it.
+- The server runs locally only. It cannot work from another machine.
+  First-time sign-in must use `bin/persistent_login.py` — the
+  per-call client kills the pending sign-in, and a headed browser
+  window on a headless machine is invisible to the user. See
+  "First-time setup — sign in" above.
 - Verified by running them: `list-tools` returned 24 tools,
   `fpl_search_players` for Wirtz returned one match, `fpl_top_players`
-  returned the pool with the Gameweek 12 deadline, and
-  `fpl_auth_status` returned not signed in. Login, `fpl_setup`,
-  `fpl_my_squad` and all write tools are untested without a signed-in
-  session — see `CONNECTOR.md` for the full untested list.
+  returned the pool with the Gameweek 12 deadline, `fpl_setup`
+  stored a team id, `fpl_login` completed through
+  `bin/persistent_login.py` (signed in, authenticated, token renews
+  automatically), and `fpl_my_squad` returned the team live and
+  authenticated. All write tools are still untested without an
+  approved change — see `CONNECTOR.md` for the full untested list.

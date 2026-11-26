@@ -65,6 +65,7 @@ for dir in "$SCRIPT_DIR" "$PWD"; do
     && -f "$dir/CONNECTOR.md" \
     && -f "$dir/connector.yaml" \
     && -f "$dir/bin/client.py" \
+    && -f "$dir/bin/persistent_login.py" \
     && -f "$dir/skills/fpl/SKILL.md" \
     && -f "$dir/skills/fpl/skill.yaml" ]]; then
     REPO_DIR="$dir"
@@ -86,7 +87,7 @@ fi
 mkdir -p "$CONNECTOR_DIR/bin" "$SKILL_DIR"
 
 cp "$REPO_DIR/CONNECTOR.md" "$REPO_DIR/connector.yaml" "$CONNECTOR_DIR/"
-cp "$REPO_DIR/bin/client.py" "$CONNECTOR_DIR/bin/"
+cp "$REPO_DIR/bin/client.py" "$REPO_DIR/bin/persistent_login.py" "$CONNECTOR_DIR/bin/"
 cp "$REPO_DIR/skills/fpl/SKILL.md" "$REPO_DIR/skills/fpl/skill.yaml" "$SKILL_DIR/"
 
 # Verify the copies match the sources.
@@ -94,6 +95,7 @@ for pair in \
   "$REPO_DIR/CONNECTOR.md:$CONNECTOR_DIR/CONNECTOR.md" \
   "$REPO_DIR/connector.yaml:$CONNECTOR_DIR/connector.yaml" \
   "$REPO_DIR/bin/client.py:$CONNECTOR_DIR/bin/client.py" \
+  "$REPO_DIR/bin/persistent_login.py:$CONNECTOR_DIR/bin/persistent_login.py" \
   "$REPO_DIR/skills/fpl/SKILL.md:$SKILL_DIR/SKILL.md" \
   "$REPO_DIR/skills/fpl/skill.yaml:$SKILL_DIR/skill.yaml"; do
   src="${pair%%:*}"
@@ -112,8 +114,8 @@ echo "  2. Set your team ID (the number in fantasy.premierleague.com/entry/<TEAM
 echo "       echo '{\"team_id\": 0}' > /tmp/fpl-setup.json"
 echo "       python3 \"$CONNECTOR_DIR/bin/client.py\" call-tool --name fpl_setup --arguments-file /tmp/fpl-setup.json"
 echo "     Replace 0 with your real team ID."
-echo "  3. Sign in once yourself, in your own browser, with fpl_login (the server never sees your password)."
-echo "     For that you need Playwright Chromium: uvx --from playwright playwright install chromium"
+echo "  3. Sign in once yourself, in your own browser, with the persistent-login driver (see README.md — do not use the two-call redirect flow with client.py; it cannot work)."
+echo "       cd \"$CONNECTOR_DIR\" && python3 bin/persistent_login.py"
 echo "  4. Approval gate: always preview a change first with dry_run=true, and only submit"
 echo "     with dry_run=false after you approve that exact preview in chat."
 echo "  See README.md for the full instructions."

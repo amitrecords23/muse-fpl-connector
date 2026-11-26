@@ -32,7 +32,7 @@
 
 - Use the connector client for every team change, and keep the team id stored with `fpl_setup` so later calls resolve it.
 
-- Sign in only when the user is present, through `fpl_login` on FPL's own page, and check the session with `fpl_auth_status` before a write.
+- Sign in only when the user is present, through `fpl_login` on FPL's own page, and check the session with `fpl_auth_status` before a write. For the first sign-in, use `bin/persistent_login.py`: it keeps one server alive from the sign-in link to the redirect. Do not do the two-call redirect flow with the per-call client — the second call is a fresh server with no pending sign-in, and it always fails with "No sign-in is waiting".
 
 - Never ask the user for an FPL password, and never paste a bearer token by hand.
 
