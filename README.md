@@ -41,6 +41,33 @@ uv tool install fantasy-premier-league-mcp
 
 ## Install this connector in Muse
 
+### One-command install
+
+```text
+curl -fsSL https://raw.githubusercontent.com/amitrecords23/muse-fpl-connector/main/install.sh | bash
+```
+
+Or, from a local clone:
+
+```text
+git clone https://github.com/amitrecords23/muse-fpl-connector
+cd muse-fpl-connector
+chmod +x install.sh
+./install.sh
+```
+
+`install.sh` copies the connector into
+`~/workspace/custom-connectors/custom.fpl/` and the skill into
+`~/workspace/custom-skills/fpl/`. It is safe to re-run, and it never
+touches your FPL login, credentials, or team config. It needs Python
+3.12+, `uv`/`uvx` (it warns if they are missing), and `git` for the
+one-liner, which clones the repo for you. For `fpl_login` you also need
+Playwright Chromium: `uvx --from playwright playwright install chromium`.
+(The `chmod +x` step is needed because GitHub's file push does not
+preserve the executable bit.)
+
+### Manual install
+
 Copy the files into your Muse workspace:
 
 ```text
@@ -142,6 +169,8 @@ client's allowed tools.
 
 ## Files in this repo
 
+- `install.sh` — one-command installer: copies the connector and skill
+  into your Muse workspace (see "One-command install" above).
 - `CONNECTOR.md` — full connector doc: connect, approval gate,
   credentials, every operation, recovery and limits.
 - `connector.yaml` — `custom.fpl` descriptor for Muse.
