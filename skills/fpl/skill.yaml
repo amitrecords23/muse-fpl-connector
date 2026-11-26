@@ -1,0 +1,5 @@
+name: "fpl"
+title: "Fantasy Premier League team management"
+description: "Manage a Fantasy Premier League team, research players and fixtures, and make approved transfers, captain and lineup changes before a gameweek deadline."
+category: "Personal planning"
+include_in_prompt: true

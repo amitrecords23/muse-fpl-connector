@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.fpl-mcp/
+credentials.json
+*.muse-github-snapshot-sync.json
+*.muse-github-snapshot-sync.json.tmp-*
